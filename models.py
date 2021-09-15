@@ -160,7 +160,8 @@ class LinDis(nn.Module):
         for layer in self.linear : 
             x = layer(x)
         return x
-        
+
+
         
     
 class EncDis(nn.Module):

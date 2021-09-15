@@ -35,36 +35,69 @@ def wgan_disstep_update_autoencoder(netE, netD, netG, optimizerE, optimizerD, op
     optimizerG.step()
     
     target_score = -repaint_error.detach().mean(dim=[1,2,3]).view(batch_size,-1)
-    predict_score = netD(latent.detach().view(batch_size,-1))
-    predict_score_loss = mse(predict_score, target_score).mean()
+    predict_repaint_score = netD(repaint.detach())
+    predict_repaint_score_loss = mse(predict_repaint_score, target_score).mean()
     
+    real_score = torch.zeros(batch_size,1, device=device)
+    predict_real_score = netD(real_cuda.detach())
+    predict_real_score_loss = mse(predict_real_score, real_score).mean()
     
-    
+    score_loss = predict_repaint_score_loss + predict_real_score_loss
     
     
     optimizerD.zero_grad()
-    predict_score_loss.backward()
+    score_loss.backward()
     optimizerD.step()
     
     loss_log = {
-        'repaint_loss in ae' : repaint_loss,
-        'predict_score_loss in ae' : predict_score_loss,
+        'up ae - repaint_loss' : repaint_loss,
+        'up ae - score_loss' : score_loss,
+        'up ae - pr_repaint_score' : predict_repaint_score.mean(),
+        'up ae - actual repaint_score' : target_score.mean(),
+        'up ae - pr_real_score' : predict_real_score.mean(),
+        'up ae - pr_real_score_loss' : predict_repaint_score_loss,
     }
     
     return loss_log
+
+
+def wcgan_smeg_disstep_update_encoder(netE, netD, netG, optimizerE, real_cuda, nz, sma) : 
+    mse = torch.nn.MSELoss()
     
-def wgan_smeg_disstep_update_discriminator(netE, netG, netD, optimizerD, real_cuda, nz, sma, clip_value) : 
     batch_size = real_cuda.size(0)
     device= real_cuda.device
     
     latent = netE(real_cuda)
-    output_real = netD(latent.view(batch_size, -1)).mean()
+    repaint = netG(latent)
+    repaint_error = mse(repaint, real_cuda)
+    repaint_loss = repaint_error
+    
+    optimizerE.zero_grad()
+    repaint_loss.backward()
+    optimizerE.step()
+
+    loss_log = {
+        'up e - repaint_loss' : repaint_loss,
+    }
+    
+    return loss_log    
+    
+    
+
+    
+def wgan_smeg_disstep_update_discriminator(netE, netG, netD, optimizerD, real_cuda, nz, sma, clip_value):
+    batch_size = real_cuda.size(0)
+    device= real_cuda.device
+    
+    latent = netE(real_cuda)
+    
+    output_real = netD(real_cuda).mean()
     
     with torch.no_grad() :
+        output_repaint = netD(netG(latent)).mean()
         mixed_z = (1-sma)*latent + (sma)*torch.randn(latent.shape, device=device)
         fake_img = netG(mixed_z)
-        latent_fake = netE(fake_img)
-    output_fake = netD(latent_fake.view(batch_size, -1)).mean()
+    output_fake = netD(fake_img).mean()
     
     dis_loss = -output_real+output_fake
     optimizerD.zero_grad()
@@ -74,13 +107,14 @@ def wgan_smeg_disstep_update_discriminator(netE, netG, netD, optimizerD, real_cu
     for p in netD.parameters():
         p.data.clamp_(-clip_value, clip_value)
     
-    loss_log={'output_real in update d':output_real,
-             'output_fake in update d':output_fake,
-             'dis_loss in update d':dis_loss,
-             'sma in update d' : sma}
+    loss_log={'up d - output_real':output_real,
+             'up d - output_fake':output_fake,
+              'up d - output_repaint' : output_repaint,
+             'up d - dis_loss in update d':dis_loss,
+             'up d - sma' : sma}
     return loss_log
     
-def wgan_smeg_disstep_update_generator(netE, netG, netD, optimizerG, real_cuda, nz, sma) :
+def wgan_smeg_disstep_update_generator(netE, netG, netD, optimizerG, real_cuda, nz, sma):
     batch_size = real_cuda.size(0)
     device= real_cuda.device
     
@@ -89,24 +123,23 @@ def wgan_smeg_disstep_update_generator(netE, netG, netD, optimizerG, real_cuda, 
         mixed_z = (1-sma)*latent + (sma)*torch.randn(latent.shape, device=device)
         
     fake_img = netG(mixed_z)
-    latent_fake = netE(fake_img)
-    output_fake = netD(latent_fake.view(batch_size, -1)).mean()
-    
+    output_fake = netD(fake_img).mean()
+    '''
     img_diff = torch.mean(torch.abs(fake_img - real_cuda))
     img_diff_loss = -img_diff
-    
-    g_loss = -output_fake + img_diff_loss * 1e-4
+    + img_diff_loss * 1e-4
+    '''
+    g_loss = -output_fake 
     optimizerG.zero_grad()
     g_loss.backward()
     optimizerG.step()
 
-    loss_log={'output_fake in update g':output_fake,
-              'img diff in update g':img_diff,
-              'sma in update g' : sma
+    loss_log={'up g - output_fake':output_fake,
+              'up g - sma' : sma
             }
     return loss_log
 
-def wcgan_smeg_disstep_update_alpha(netE, netD, netG, optimizerM, real_cuda, nz, sma) :
+def wcgan_smeg_disstep_update_alpha(netE, netD, netG, optimizerM, real_cuda, nz, sma):
     batch_size = real_cuda.size(0)
     device = real_cuda.device
      
@@ -121,19 +154,19 @@ def wcgan_smeg_disstep_update_alpha(netE, netD, netG, optimizerM, real_cuda, nz,
     img_diff_loss = -img_diff
     
     with torch.no_grad() : 
-        output_real = netD(real_latent.view(batch_size, -1)).mean()
-        output_fake = netD(mixed_latent.view(batch_size, -1)).mean()
+        output_repaint = netD(repaint_img).mean()
+        output_fake = netD(netG(mixed_latent)).mean()
         
-    if output_fake>=output_real : 
+    if output_fake>=output_repaint : 
         optimizerM.zero_grad()
         img_diff_loss.backward()
         optimizerM.step()
         
-    loss_log = {'img_diff in alpha update' : img_diff,
-        'output_fake in alpha update' : output_fake.item(),
-        'output_real in alpha update' : output_real.item(),
-        'update? in alpha update' :output_fake>=output_real,
-        'sma in update alpha' : sma,
+    loss_log = {'up m - img_diff' : img_diff,
+        'up m - output_fake' : output_fake.item(),
+        'up m - output_repaint' : output_repaint.item(),
+        'up m - update?' : int(output_fake>=output_repaint),
+        'up m - sma' : sma,
        } 
 
     return loss_log
