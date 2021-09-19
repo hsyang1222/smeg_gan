@@ -226,9 +226,9 @@ def main(args):
             
             
             
-            
-            
-    mul_alpha = torch.tensor([-5.0], requires_grad=True, device=device)
+    mul_alpha = torch.tensor([-5.0], requires_grad=True, device=device)        
+    if args.use_plain_alpha : 
+        mul_alpha = torch.tensor([args.add_z_min], device=device)
     optimizerM = torch.optim.SGD([mul_alpha], lr=0.001) 
     loss_alpha = (-1.,-1.)
     lossE = 0.
@@ -246,6 +246,9 @@ def main(args):
 
     
     loss_e = {}
+    loss_dis={}
+    loss_g={}
+    loss_alpha={}
     
 
     for i in range(1, epochs+1):
@@ -275,12 +278,14 @@ def main(args):
                 if smeg_gan : 
                     if args.dis_step : 
                         sma = torch.sigmoid(mul_alpha)
+                        if args.use_plain_alpha : sma = mul_alpha
                         loss_dis = wgan_smeg_disstep_update_discriminator(netE, netG, netD, optimizerD, \
                                                                   real_cuda, nz, sma, args.clip_value)
                         if i % args.n_critic == 0 : 
                             loss_g = wgan_smeg_disstep_update_generator(netE, netG, netD, optimizerG, real_cuda, nz, sma)
-                        sma = torch.sigmoid(mul_alpha)
-                        loss_alpha = wcgan_smeg_disstep_update_alpha(netE, netD, netG, optimizerM, real_cuda, nz, sma)
+                        if not args.use_plain_alpha :
+                            sma = torch.sigmoid(mul_alpha)
+                            loss_alpha = wcgan_smeg_disstep_update_alpha(netE, netD, netG, optimizerM, real_cuda, nz, sma)
                         if args.train_e : 
                             loss_e = wcgan_smeg_disstep_update_encoder(netE, netD, netG, optimizerE, real_cuda, nz, sma)
                     else : 
@@ -296,7 +301,11 @@ def main(args):
                                                     real_cuda, criterion, nz, args.clip_value)
                     if i % args.n_critic == 0 : 
                         lossG = wgan_update_generator(netD, netG, netE, optimizerG, real_cuda, criterion, nz)
-
+                        
+        if basemodel == 'wgan' :
+            if args.use_plain_alpha :
+                loss_alpha = wcgan_smeg_disstep_update_plain_alpha(train_loader, netE, netD, netG, \
+                                           optimizerM, real_cuda, nz, sma, device, add_alpha=0.01, conti=args.alpha_conti)
 
             '''
             elif basemodel == 'lsgan' :
@@ -361,6 +370,8 @@ if __name__ == "__main__":
     parser.add_argument('--ae_end_conj', type=bool, default=False)
     parser.add_argument('--ae_end_diffloss', type=float, default=1e-4)
     parser.add_argument('--train_e', type=bool, default=False)
+    parser.add_argument('--use_plain_alpha', type=bool, default=False)
+    parser.add_argument('--alpha_conti', type=bool, default=False)
 
     args = parser.parse_args()
 
