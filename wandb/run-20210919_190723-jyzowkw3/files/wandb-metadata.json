@@ -1,0 +1,26 @@
+{
+    "os": "Linux-4.15.0-20-generic-x86_64-with-glibc2.27",
+    "python": "3.9.5",
+    "heartbeatAt": "2021-09-19T19:07:24.365645",
+    "startedAt": "2021-09-19T19:07:23.273519",
+    "docker": null,
+    "gpu": "TITAN Xp",
+    "gpu_count": 4,
+    "cpu_count": 48,
+    "cuda": null,
+    "args": [
+        "-f",
+        "/root/.local/share/jupyter/runtime/kernel-fb43f641-cce7-4460-890f-94c7a577077d.json"
+    ],
+    "state": "running",
+    "program": "<python with no main file>",
+    "git": {
+        "remote": "https://github.com/hsyang1222/smeg_gan.git",
+        "commit": "58a083db04c61be554b070467a89845074d00fc5"
+    },
+    "email": "hsyang1222@snu.ac.kr",
+    "root": "/home/hsyang/workspace/20210306_gan/smeg_gan_git",
+    "host": "7d2cdef3104f",
+    "username": "root",
+    "executable": "/opt/conda/envs/stylegan2/bin/python"
+}

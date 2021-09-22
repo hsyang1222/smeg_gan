@@ -46,6 +46,7 @@ def main(args):
     wandb_name = dataset+','+basemodel+','+str(img_size)
     if args.run_test : wandb_name += ', test run'
     if args.smeg_gan : wandb_name +=', smeg'
+    if args.inf_gs : wandb_name += ', inf_gs'
     if args.wandb : 
         wandb.login()
         wandb.init(project=project_name, 
@@ -159,57 +160,17 @@ def main(args):
         optimizerG = torch.optim.Adam(netG.parameters(), lr=args.lr, betas=(args.beta1, 0.999), weight_decay=args.lr )
         optimizerE = torch.optim.Adam(netE.parameters(), lr=args.lr, betas=(args.beta1, 0.999), weight_decay=args.lr )
         optimizerD = torch.optim.Adam(netD.parameters(), lr=args.lr, betas=(args.beta1, 0.999), weight_decay=args.lr )
-        optimizerED = torch.optim.RMSprop(netED.parameters(), lr=args.lr)
+
         
         
         if args.ae_end_conj == False : 
-            for epoch in range(AE_iter):
+            for epoch in range(1, AE_iter+1):
                 for i, data in enumerate(tqdm.tqdm((train_loader), desc="AE[%d/%d]" % (epoch, AE_iter))):
                     real_cuda = data[0].to(device)
-                    batch_size = real_cuda.size(0)
-                    if basemodel in ['dcgan']:  
-                        loss_ae = dcgan_update_autoencoder(netE, netG, optimizerE, optimizerG, mse, real_cuda, nz)
-                    elif basemodel in ['wgan'] :
-                        if args.dis_step : 
-                            loss_ae = wgan_disstep_update_autoencoder(netE, netD, netG, optimizerE, optimizerD, optimizerG, real_cuda)
-                        else : 
-                            loss_ae = wgan_encdis_update_autoencoder(netED, netG, optimizerED, optimizerG, mse, criterion, real_cuda, nz)
+                    batch_size = real_cuda.size(0)                    
+                    loss_ae = dcgan_update_autoencoder(netE, netG, optimizerE, optimizerG, mse, real_cuda, nz)
                     if args.run_test : break
-                 
-                
-                if args.dis_step : 
-                    wandb_wgan_disstep_ae_only_sample(wandb, args, epoch, netG, netE, train_loader, device, loss_ae)
-                else : 
-                    wandb_update_wgan_ae_only_sample(wandb, args, epoch, netG, netED, train_loader, device, loss_ae)
-                
                 if args.run_test : break
-                        
-                        
-        else : # args.ae_end_conj == True
-            epoch = 0
-            loss_mean_last = 9999.0
-            while epoch < 1000 :
-                loss_list = []
-                for i, data in enumerate(tqdm.tqdm((train_loader), desc="AE[%d]" % epoch)):
-                    real_cuda = data[0].to(device)
-                    batch_size = real_cuda.size(0)
-                    if basemodel in ['dcgan', 'wgan'] :  
-                        loss_ae = dcgan_update_autoencoder(netE, netG, optimizerE, optimizerG, mse, real_cuda, nz)
-                        loss_list.append(loss_ae)
-                    
-                    loss_mean = sum(loss_list)/len(loss_list) 
-                #print("loss sum and len", sum(loss_list), len(loss_list))
-                wandb_update_only_sample(wandb, args, epoch, netG, netE, train_loader,loss_mean_last-loss_mean, device)
-                if loss_mean_last-loss_mean  <= args.ae_end_diffloss : 
-                    print("success autoencoder (loss_diff=%f-%f=%f<=%f)" % \
-                          (loss_mean_last, loss_mean, loss_mean_last-loss_mean, args.ae_end_diffloss))
-                    break
-                else : 
-                    print("learn autoencoder (loss_diff=%f-%f=%f>%f)" % \
-                          (loss_mean_last, loss_mean, loss_mean_last-loss_mean, args.ae_end_diffloss))
-                loss_mean_last = loss_mean
-                epoch +=1
-
                 
             
     optimizerD = torch.optim.Adam(netD.parameters(), lr=args.lr, betas=(args.beta1, 0.999))
@@ -223,17 +184,7 @@ def main(args):
         if netE is not None :
             optimizerE = torch.optim.RMSprop(netE.parameters(), lr=args.lr)
             
-            
-            
-            
-    mul_alpha = torch.tensor([-5.0], requires_grad=True, device=device)        
-    if args.use_plain_alpha : 
-        mul_alpha = torch.tensor([args.add_z_min], device=device)
-    optimizerM = torch.optim.SGD([mul_alpha], lr=0.001) 
-    loss_alpha = (-1.,-1.)
-    lossE = 0.
-    if not smeg_gan : 
-        sma = 1.
+    mul_alpha = torch.tensor([0.1], device=device)        
 
     if netE is not None : 
         real_cuda = next(iter(train_loader))[0].to(device)
@@ -250,81 +201,57 @@ def main(args):
     loss_g={}
     loss_alpha={}
     
-
-    for i in range(1, epochs+1):
-        batch_count = 0
-
-        lossD_list = []
-        lossG_list = []
+    output_repaint_list = []
+    output_mixed_list = []
+    output_gsfake_list = []
+    output_real_list = []
+    smeg = args.smeg_gan
+    
+    i=1
+    while i <= epochs:
+        loss_log = {}
+        sma = mul_alpha
         
-        for image, label in tqdm.tqdm(train_loader, desc='Train[%d/%d]' %(i, epochs)):
-            batch_count += 1
-            real_cuda = image.to(device)
+        if smeg : 
+            for image, label in tqdm.tqdm(train_loader, desc='Train(SMEG)[%d/%d]' %(i, epochs)):
+                real_cuda = image.to(device)
+                loss_d = wgan_smeg_v2_update_discriminator(netE, netG, netD, optimizerD, real_cuda, nz, sma, args.clip_value)
+                output_real_list.append(loss_d['up d - output_real'].detach())
+                output_gsfake_list.append(loss_d['up d - output_gaussian_fake'].detach())
+                if i % args.n_critic == 0 : 
+                    loss_g = wgan_smeg_v2_update_generator(netE, netG, netD, optimizerG, real_cuda, nz, sma, hyper_img_diff=1e-4)
+                    loss_e = wgan_smeg_v2_update_encoder(netE, netG, netD, optimizerE, real_cuda)
+                    output_repaint_list.append(loss_g['up g - output_repaint'].detach())
+                    output_mixed_list.append(loss_g['up g - output_mixed'].detach())
+                loss_log
+                if args.run_test : break
             
-            if basemodel == 'dcgan' :  
-                if smeg_gan : 
-                    sma = torch.sigmoid(mul_alpha)
-                    lossD = dcgan_smeg_update_discriminator(netD, netG, netE, optimizerD,\
-                                                real_cuda, criterion, nz, sigmoid_mul_alpha=sma)
-                    lossG = dcgan_smeg_update_generator(netD, netG, netE, optimizerG, real_cuda, criterion, nz, sma)
-                    sma = torch.sigmoid(mul_alpha)
-                    loss_alpha = dcgan_smeg_update_alpha(netD, netG, netE, optimizerM, real_cuda, criterion, nz, sma)
-                    lossE = dcgna_smeg_update_encoder(netE, netG, real_cuda, optimizerE, mse, nz)
-                else : 
-                    lossD = dcgan_update_discriminator(netD, netG, netE, optimizerD,\
-                                                    real_cuda, criterion, nz)
-                    lossG = dcgan_update_generator(netD, netG, netE, optimizerG, real_cuda, criterion, nz)
-            elif basemodel == 'wgan' : 
-                if smeg_gan : 
-                    if args.dis_step : 
-                        sma = torch.sigmoid(mul_alpha)
-                        if args.use_plain_alpha : sma = mul_alpha
-                        loss_dis = wgan_smeg_disstep_update_discriminator(netE, netG, netD, optimizerD, \
-                                                                  real_cuda, nz, sma, args.clip_value)
-                        if i % args.n_critic == 0 : 
-                            loss_g = wgan_smeg_disstep_update_generator(netE, netG, netD, optimizerG, real_cuda, nz, sma)
-                        if not args.use_plain_alpha :
-                            sma = torch.sigmoid(mul_alpha)
-                            loss_alpha = wcgan_smeg_disstep_update_alpha(netE, netD, netG, optimizerM, real_cuda, nz, sma)
-                        if args.train_e : 
-                            loss_e = wcgan_smeg_disstep_update_encoder(netE, netD, netG, optimizerE, real_cuda, nz, sma)
-                    else : 
-                        sma = torch.sigmoid(mul_alpha)
-                        loss_dis = wgan_smeg_update_discriminator(netED, netG, optimizerED, \
-                                                                  real_cuda, criterion, nz, sma, args.clip_value)
-                        if i % args.n_critic == 0 : 
-                            loss_g = wgan_smeg_update_generator(netED, netG, optimizerG, real_cuda, criterion, nz, sma)
-                        sma = torch.sigmoid(mul_alpha)
-                        loss_alpha = wcgan_smeg_update_alpha(netED, netG, optimizerM, real_cuda, criterion, nz, sma)
-                else : 
-                    lossD = wgan_update_discriminator(netD, netG, netE, optimizerD,\
-                                                    real_cuda, criterion, nz, args.clip_value)
-                    if i % args.n_critic == 0 : 
-                        lossG = wgan_update_generator(netD, netG, netE, optimizerG, real_cuda, criterion, nz)
-                        
-        if basemodel == 'wgan' :
-            if args.use_plain_alpha :
-                loss_alpha = wcgan_smeg_disstep_update_plain_alpha(train_loader, netE, netD, netG, \
-                                           optimizerM, real_cuda, nz, sma, device, add_alpha=0.01, conti=args.alpha_conti)
+            output_real = torch.stack(output_real_list).mean()
+            output_repaint = torch.stack(output_repaint_list).mean()
+            output_mixed = torch.stack(output_mixed_list).mean()
+            output_gsfake = torch.stack(output_gsfake_list).mean()
 
-            '''
-            elif basemodel == 'lsgan' :
-                lsgan_smeg_update_discriminator()
-                lsgan_smeg_update_generator()
+            loss_m = wcgan_smeg_v2_update_alpha(output_real, output_repaint, output_mixed, output_gsfake, \
+                                                sma, add_alpha=1e-1, per_close=args.per_close)
+            smeg = not loss_m['up alpha - end_smeg']
+        else : 
+            for image, label in tqdm.tqdm(train_loader, desc='Train[%d/%d]' %(i, epochs)):
+                real_cuda = image.to(device)
+                loss_d = wgan_update_discriminator(netD, netG, netE, optimizerD, real_cuda, criterion, nz, clip_value=0.01)
+                if i % args.n_critic == 0 : 
+                    loss_g = wgan_update_generator(netD, netG, netE, optimizerG, real_cuda, criterion, nz)
+                if args.run_test : break
+            
+        loss_log.update(loss_d)
+        loss_log.update(loss_g)
+        loss_log.update(loss_m)
+        loss_log.update(loss_e)
+        wandb_wgan_update(wandb, args, i, inception_model_score, netE, netG, netD, train_loader, nz, device, sma, loss_log)
 
-            '''
+        i+=1
 
-            if args.run_test : break
-                
-        loss = {}
-        loss.update(loss_dis)
-        loss.update(loss_g)
-        loss.update(loss_alpha)
-        loss.update(loss_e)
-        wandb_wgan_update(wandb, args, i, inception_model_score, netE, netG, train_loader, nz, device, sma, loss)
-
-                
-
+        
+               
             
          
         
@@ -349,7 +276,7 @@ if __name__ == "__main__":
     parser.add_argument('--latent_layer', type=int, default=3)
     parser.add_argument('--latent_dim', type=int, default=10)
     parser.add_argument('--n_iter', type=int, default=3)
-    parser.add_argument('--project_name', type=str, default='SMEG GAN')
+    parser.add_argument('--project_name', type=str, default='smeg_gan_v2')
     parser.add_argument('--dataset', type=str, default='', 
                         choices=['LSUN_dining_room', 'LSUN_classroom', 'LSUN_conference', 'LSUN_churches',
                                             'FFHQ', 'CelebA', 'cifar10', 'mnist', 'mnist_fashion', 'emnist'])
@@ -372,6 +299,8 @@ if __name__ == "__main__":
     parser.add_argument('--train_e', type=bool, default=False)
     parser.add_argument('--use_plain_alpha', type=bool, default=False)
     parser.add_argument('--alpha_conti', type=bool, default=False)
+    parser.add_argument('--per_close', type=float, default=1e-2)
+    parser.add_argument('--inf_gs', type=bool, default=True)
 
     args = parser.parse_args()
 

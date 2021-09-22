@@ -2,6 +2,107 @@ import torch
 from torch.autograd import Variable
 import numpy as np
 
+def wgan_smeg_v2_update_discriminator(netE, netG, netD, optimizerD, real_cuda, nz, sma, clip_value):
+    batch_size = real_cuda.size(0)
+    device= real_cuda.device
+    
+    with torch.no_grad() :
+        gaussian_latent = torch.randn(batch_size, nz, 1, 1, device=device)
+        fake_gaussian_img = netG(gaussian_latent)
+    
+    output_real = netD(real_cuda).mean()
+    output_fake = netD(fake_gaussian_img).mean()
+    
+    dis_loss = -output_real+output_fake
+    optimizerD.zero_grad()
+    dis_loss.backward()
+    optimizerD.step()
+    
+    for p in netD.parameters():
+        p.data.clamp_(-clip_value, clip_value)
+    
+    loss_log={'up d - output_real':output_real,
+             'up d - output_gaussian_fake':output_fake,
+             'up d - dis_loss in update d':dis_loss,
+             'up d - sma' : sma}
+    return loss_log
+
+def wgan_smeg_v2_update_generator(netE, netG, netD, optimizerG, real_cuda, nz, sma, hyper_img_diff=1e-4):
+    mse = torch.nn.MSELoss()
+    batch_size = real_cuda.size(0)
+    device= real_cuda.device
+    
+    with torch.no_grad() : 
+        latent = netE(real_cuda)
+        mixed_z = (1-sma)*latent + (sma)*torch.randn(latent.shape, device=device)
+        
+        
+    repaint_img = netG(latent)    
+    mixed_img = netG(mixed_z)
+    
+    output_repaint = netD(repaint_img).mean()
+    output_mixed = netD(mixed_img).mean()
+    
+    mixed_repaint_diff = mse(mixed_img, repaint_img)
+    repaint_error = mse(repaint_img, real_cuda)
+    
+    g_loss = -output_mixed + repaint_error - mixed_repaint_diff * hyper_img_diff
+    optimizerG.zero_grad()
+    g_loss.backward()
+    optimizerG.step()
+
+    loss_log={'up g - output_mixed':output_mixed,
+              'up g - output_repaint':output_repaint,
+              'up g - sma' : sma,
+              'up g - mixed_repaint_diff' : mixed_repaint_diff,
+              'up g - repaint_error' : repaint_error,
+            }
+    return loss_log
+
+def wgan_smeg_v2_update_encoder(netE, netG, netD, optimizerE, real_cuda):
+    mse = torch.nn.MSELoss()
+    
+    latent = netE(real_cuda)
+    repaint_img = netG(latent)
+    
+    repaint_error = mse(repaint_img, real_cuda)
+    
+    r_loss = repaint_error
+    optimizerE.zero_grad()
+    r_loss.backward()
+    optimizerE.step()
+    
+    loss_log = {'up e - repaint_error' : repaint_error}
+    
+    return loss_log
+
+def wcgan_smeg_v2_update_alpha(output_real, output_repaint, output_mixed, output_gsfake, sma, add_alpha=1e-2, per_close=1e-2) : 
+            
+    add_sma = 0
+    end_smeg = False
+    diff_fake_real = output_real - output_gsfake
+    close_standard = diff_fake_real * per_close
+    if sma < 1 :
+        if output_repaint - output_mixed < close_standard:
+            add_sma = add_alpha
+            sma[0] += add_sma
+    else : 
+        sma = 1
+        end_smeg = True
+        
+    loss_log={
+        'up alpha - add_sma' : add_sma,
+        'up alpha - sma' : sma,
+        'up alpha - output_repaint' : output_repaint,
+        'up alpha - output_mixed' : output_mixed,
+        'up alpha - end_smeg' : end_smeg,
+        'up alpha - output repaint-mixed' : output_repaint - output_mixed,
+    }
+    
+    return loss_log
+
+
+
 def dcgan_update_autoencoder(netE, netG, optimizerE, optimizerG, mse, real_cuda, nz) :
     batch_size = real_cuda.size(0)
     latent_vector = netE(real_cuda)
@@ -442,8 +543,11 @@ def wgan_update_discriminator(netD, netG, netE, optimizerD, real_cuda, criterion
     for p in netD.parameters():
             p.data.clamp_(-clip_value, clip_value)
     
-    #return errD.item()
-    return errD_real.item(), errD_fake.item()
+    loss_log={'up d - output_real': -errD_real,
+         'up d - output_fake':errD_fake,
+         'up d - loss':errD}
+    
+    return loss_log
 
 def wgan_update_generator(netD, netG, netE, optimizerG, real_cuda, criterion, nz) : 
     batch_size = real_cuda.size(0)
@@ -459,7 +563,12 @@ def wgan_update_generator(netD, netG, netE, optimizerG, real_cuda, criterion, nz
     optimizerG.zero_grad()
     errD.backward()
     optimizerG.step()
-    return errD.item()
+    
+    loss_log={
+        'up g - output_fake' : -errD_fake
+        }
+    
+    return loss_log
 
 
 def wgan_smeg_update_discriminator(netED, netG, optimizerED, real_cuda, criterion, nz, sma, clip_value=0.01):

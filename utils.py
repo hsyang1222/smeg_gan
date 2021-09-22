@@ -160,10 +160,12 @@ def wandb_update_wgan_ae_only_sample(wandb, args, i, netG, netE, train_loader, d
         matric.update(loss_log)
         wandb.log(matric)           
 
-def sample_dissetp_wgan_fake(netE, netG, train_loader, nz, device, sma, just=-1):
+def sample_dissetp_wgan_fake(netE, netG, train_loader, nz, device, sma, just=-1, gaussian_only=False):
     fake_image_list = []
+    disable = False if just==-1 else True
+    sma = 1 if gaussian_only else sma
     with torch.no_grad() : 
-        for image, label in tqdm.tqdm(train_loader, desc='insert fake') :
+        for image, label in tqdm.tqdm(train_loader, desc='insert fake', disable=disable) :
             batch_size = image.size(0)
             real_cuda = image.to(device)
             
@@ -230,29 +232,25 @@ def sample_wgan_repaint_just(netG, netED, train_loader, nz, device, just) :
                 
     fake_image_all = torch.cat(fake_image_list)
     return fake_image_all
+
+
+
         
-        
-def wandb_wgan_update(wandb, args, i, inception_model_score, netE, netG, train_loader, nz, device, sma, loss):
+def wandb_wgan_update(wandb, args, i, inception_model_score, netE, netG, netD, train_loader, nz, device, sma, loss_log):
         
     if args.wandb : 
         if i % args.save_image_interval == 0 :
             inception_model_score.clear_fake()
-            if args.dis_step : 
-                fake_sample = sample_dissetp_wgan_fake(netE, netG, train_loader, nz, device, sma)
-            else : 
-                fake_sample = sample_wgan_fake(netG, netED, train_loader, nz, device, sma=sma)
+            fake_sample = sample_dissetp_wgan_fake(netE, netG, train_loader, nz, device, sma, gaussian_only=args.inf_gs)
             inception_model_score.put_fake(fake_sample)
 
-            train_model_to([netE, netG], 'cpu')
+            train_model_to([netE, netG, netD], 'cpu')
             matric = gen_matric(inception_model_score, device)
-            train_model_to([netE, netG], device)
+            train_model_to([netE, netG, netD], device)
 
         else :
             just = args.sample_img_num ** 2
-            if args.dis_step : 
-                fake_sample = sample_dissetp_wgan_fake(netE, netG, train_loader, nz, device, sma, just)
-            else : 
-                fake_sample = sample_wgan_fake_just(netG, netED, train_loader, nz, device, just, sma=sma)
+            fake_sample = sample_dissetp_wgan_fake(netE, netG, train_loader, nz, device, sma, just, gaussian_only=args.inf_gs)
             matric = {}
 
         save_sample_img = fake_sample[:args.sample_img_num ** 2]
@@ -260,16 +258,12 @@ def wandb_wgan_update(wandb, args, i, inception_model_score, netE, netG, train_l
         matric.update({'Step':i,
                   'sample' : [wandb.Image(grid_sample_img, caption=str(i))],
                   })
-        matric.update(loss)
+        matric.update(loss_log)
         if args.smeg_gan : 
-            matric.update({'sma':sma})
-            if args.dis_step : 
-                repaint_sample = sample_dissetp_wgan_fake(netE, netG, train_loader, nz, device, 1.0, args.sample_img_num ** 2)
-            else : 
-                repaint_sample = sample_wgan_repaint_just(netG, netED, train_loader, nz, device, args.sample_img_num ** 2)
+            repaint_sample = sample_dissetp_wgan_fake(netE, netG, train_loader, \
+                                                      nz, device, 1.0, args.sample_img_num ** 2, gaussian_only=args.inf_gs)
             grid_repaint_img = make_grid_img(repaint_sample[:args.sample_img_num ** 2], nrow=args.sample_img_num)
             matric.update({'sample_repaint' : [wandb.Image(grid_repaint_img, caption=str(i))]})
-
 
         wandb.log(matric)
 
