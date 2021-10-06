@@ -196,6 +196,8 @@ class GenerativeModelScore:
         
         assert self.lazy, "lazy_forward only run in lazy mode. call lazy_mode() first."
         
+        batch_size = 64
+        
         from torch.utils.data import  TensorDataset, DataLoader
         import tqdm 
         
