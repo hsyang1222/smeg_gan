@@ -50,7 +50,7 @@ def get_ffhq_thumbnails(batch_size, img_size):
     train_sampler = torch.utils.data.SubsetRandomSampler(train_indices)
     test_sampler = torch.utils.data.SubsetRandomSampler(test_indices)
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, sampler=train_sampler)
-    test_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, sampler=test_sampler)
+    test_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, sampler=test_sampler, pin_memory=True, num_workers=24)
     return train_loader, test_loader
 
 '''

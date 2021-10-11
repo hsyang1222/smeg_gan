@@ -307,12 +307,12 @@ def sample_batch_gaussian(netG, nz, device, size=50000, batch_size=2048) :
     with torch.no_grad() :
         while True :
             fake_latent = torch.randn(batch_size, nz, 1, 1, device=device)
-            fake_img = netG(fake_latent)
+            fake_img = netG(fake_latent).cpu()
             sample.append(fake_img)
             if len(sample) * batch_size >= size : break
     
     sample_torch = torch.cat(sample)[:size]
-    return sample_torch.cpu()
+    return sample_torch
 
 
 def wandb_update(wandb, args, i, inception_model_score, netE, netG, netD, train_loader, nz, device, sma, loss_log, force_metric=False):
@@ -320,7 +320,7 @@ def wandb_update(wandb, args, i, inception_model_score, netE, netG, netD, train_
     if args.wandb : 
         if (i % args.save_image_interval == 0) or force_metric:
             inception_model_score.clear_fake()
-            fake_sample = sample_batch_gaussian(netG, nz, device, size=len(train_loader.dataset), batch_size=2048)
+            fake_sample = sample_batch_gaussian(netG, nz, device, size=len(train_loader.dataset), batch_size=args.batch_size)
             inception_model_score.put_fake(fake_sample)
 
             train_model_to([netE, netG, netD], 'cpu')
@@ -337,10 +337,11 @@ def wandb_update(wandb, args, i, inception_model_score, netE, netG, netD, train_
                   })
         matric.update(loss_log)
         if args.smeg_gan : 
+            '''
             repaint_sample = sample_repaint(netG, netE, train_loader, nz, device, size=args.sample_img_num**2)
             grid_repaint_img = make_grid_img(repaint_sample, nrow=args.sample_img_num)
             matric.update({'sample_repaint' : [wandb.Image(grid_repaint_img, caption=str(i))]})
-            
+            '''
             if (i % args.feature_kde_every ==0) or force_metric : 
                 feature_kde = feature_explore_plt_list(train_loader, netE, nz, sma, device)
                 matric.update({"feature_kde" : [wandb.Image(plt) for plt in feature_kde]})

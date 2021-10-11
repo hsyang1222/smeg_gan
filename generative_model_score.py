@@ -196,8 +196,6 @@ class GenerativeModelScore:
         
         assert self.lazy, "lazy_forward only run in lazy mode. call lazy_mode() first."
         
-        batch_size = 64
-        
         from torch.utils.data import  TensorDataset, DataLoader
         import tqdm 
         
@@ -251,4 +249,5 @@ class GenerativeModelScore:
     
 
     def analysis_softmax_and_feature(self, images):
-        return self.inception_model(images)
+        with torch.no_grad() : 
+            return self.inception_model(images)

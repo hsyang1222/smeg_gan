@@ -48,7 +48,7 @@ def main(args):
     if smeg_gan == 'False' or smeg_gan == 'false' : 
         smeg_gan = False
     
-    wandb_name = dataset+','+basemodel+','+str(img_size)
+    wandb_name = dataset+','+basemodel+','+str(img_size)+'cadd'
     if args.run_test : wandb_name += ', test run'
     if args.smeg_gan : wandb_name +=', smeg'
     if args.inf_gs : wandb_name += ', inf_gs'
@@ -210,6 +210,8 @@ def main(args):
     output_gsfake_list = []
     output_real_list = []
     smeg = args.smeg_gan
+    if args.add_alpha <0 :
+        smeg=False
     
     i=1
     while i <= epochs:
@@ -236,8 +238,13 @@ def main(args):
             output_mixed = torch.tensor(output_mixed_list).mean()
             output_gsfake = torch.tensor(output_gsfake_list).mean()
 
+            
             loss_m = smeg_update_alpha(output_real, output_repaint, output_mixed, output_gsfake,\
                                                 sma, add_alpha=args.add_alpha, per_close=args.per_close)
+            
+            #new param
+            args.add_alpha = args.add_alpha*args.add_mul_alpha
+            
             smeg = not bool(loss_m['up alpha - end_smeg'])
         else : 
         ### vanilla gan train
@@ -315,6 +322,7 @@ if __name__ == "__main__":
     parser.add_argument('--inf_gs', type=bool, default=True)
     parser.add_argument('--hyper_img_diff', type=float, default=0.005)
     parser.add_argument('--add_alpha', type=float, default=1e-2)
+    parser.add_argument('--add_mul_alpha', type=float, default=1)
     parser.add_argument('--autoencoder', type=str, default='autoencoder')
     parser.add_argument('--time_limit', type=str, default='', help="hour:min:sec")
     parser.add_argument('--feature_kde_every', type=int, default=100)

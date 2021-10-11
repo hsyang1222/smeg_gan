@@ -449,7 +449,7 @@ def dcgan_smeg_update_generator(netD, netG, netE, optimizerG, real_cuda, nz, sma
               'up g - mixed_repaint_diff' : mixed_repaint_diff.item(),
               'up g - repaint_error' : repaint_error.item(),
               'up g - loss' : g_loss.item(),
-              'up g - mean of E(x)' : latent.mean(dim=(0,2,3)).detach().cpu()
+           #   'up g - mean of E(x)' : latent.mean(dim=(0,2,3)).detach().cpu()
             }
     return loss_log
 
