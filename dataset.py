@@ -44,14 +44,8 @@ def get_ffhq_thumbnails(batch_size, img_size):
                                             (0.5, 0.5, 0.5)),
     ])
     train_dataset = torchvision.datasets.ImageFolder(image_path + 'FFHQ/', transformation)
-    num_train = len(train_dataset)
-    indices = list(range(num_train))
-    train_indices, test_indices = indices[:60000], indices[60000:]
-    train_sampler = torch.utils.data.SubsetRandomSampler(train_indices)
-    test_sampler = torch.utils.data.SubsetRandomSampler(test_indices)
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, sampler=train_sampler)
-    test_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, sampler=test_sampler, pin_memory=True, num_workers=24)
-    return train_loader, test_loader
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True, pin_memory=True, num_workers=24)
+    return train_loader
 
 '''
 def get_celebA_dataset(batch_size, img_size):

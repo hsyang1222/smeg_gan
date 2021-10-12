@@ -84,7 +84,7 @@ def main(args):
     if dataset == 'CelebA':
         train_loader = get_celebA_dataset(batch_size, img_size)
     elif dataset == 'FFHQ':
-        train_loader, test_loader = get_ffhq_thumbnails(batch_size, img_size)
+        train_loader = get_ffhq_thumbnails(batch_size, img_size)
     elif dataset == 'mnist':
         train_loader = get_mnist_dataset(batch_size, img_size)
     elif dataset == 'mnist_fashion':
@@ -287,10 +287,10 @@ if __name__ == "__main__":
     parser.add_argument('--epochs', type=int, default=100)
     parser.add_argument('--batch_size', type=int, default=64)
     parser.add_argument('--img_size', type=int, default=32)
-    parser.add_argument('--save_image_interval', type=int, default=5)
+    parser.add_argument('--save_image_interval', type=int, default=10)
     parser.add_argument('--nz', type=int, default=100)
-    parser.add_argument('--ngf', type=int, default=64)
-    parser.add_argument('--ndf', type=int, default=64)
+    parser.add_argument('--ngf', type=int, default=8)
+    parser.add_argument('--ndf', type=int, default=8)
     parser.add_argument('--beta1', type=float, default=0.5)
     parser.add_argument('--latent_layer', type=int, default=3)
     parser.add_argument('--latent_dim', type=int, default=10)
