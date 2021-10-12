@@ -5,120 +5,87 @@ import torch.nn as nn
 class Generator(nn.Module):
     def __init__(self, ngpu, nz=100, ndf=64, ngf=64, nc=3, img_size=32):
         super(Generator, self).__init__()
-        self.ngpu = ngpu
-        
-        output_kernel_size = ngf*4*(2*(img_size//32))
-        #print(ngf, img_size//32, 2*(img_size//32), output_kernel_size)
-        
-        kernel_up = nn.Sequential(
-            nn.ConvTranspose2d( nz, output_kernel_size, 2, 1, 0, bias=False),
-            nn.BatchNorm2d(output_kernel_size),
-            nn.LeakyReLU(0.2, inplace=True)
-        )
-        
-        up_size = []
-        cur_size = 2
-        input_kernel_size = output_kernel_size
-        output_kernel_size = output_kernel_size//2
-        
-        while cur_size < img_size : 
-            cur_size *= 2
-            if cur_size == img_size : 
-                up_size.append(torch.nn.ConvTranspose2d(input_kernel_size, nc, 4, 2, 1))
-            else : 
-                up_size.append(torch.nn.ConvTranspose2d(input_kernel_size, output_kernel_size, 4, 2, 1))
-                up_size.append(nn.BatchNorm2d(output_kernel_size))
-                up_size.append(nn.LeakyReLU(0.2, inplace=True))
-            input_kernel_size = output_kernel_size
-            output_kernel_size = output_kernel_size//2
-            
-        up_size.insert(0, kernel_up)
-            
-        self.main = torch.nn.ModuleList(up_size)
 
-    def forward(self, x):
-        for layer in self.main:
-            x = layer(x)
-        return x
+        self.init_size = img_size // 4
+        self.l1 = nn.Sequential(nn.Linear(nz, 128 * self.init_size ** 2))
+
+        self.conv_blocks = nn.Sequential(
+            nn.BatchNorm2d(128),
+            nn.Upsample(scale_factor=2),
+            nn.Conv2d(128, 128, 3, stride=1, padding=1),
+            nn.BatchNorm2d(128, 0.8),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Upsample(scale_factor=2),
+            nn.Conv2d(128, 64, 3, stride=1, padding=1),
+            nn.BatchNorm2d(64, 0.8),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv2d(64, nc, 3, stride=1, padding=1),
+            nn.Tanh(),
+        )
+        self.nz = nz
+
+    def forward(self, z):
+        out = self.l1(z.view(-1,self.nz))
+        out = out.view(out.shape[0], 128, self.init_size, self.init_size)
+        img = self.conv_blocks(out)
+        return img
 
 class Discriminator(nn.Module):
     def __init__(self, ngpu, nz=100, ndf=64, ngf=64, nc=3, img_size=32):
         super(Discriminator, self).__init__()
-        self.ngpu = ngpu
-
-        output_kernel_size = ndf
         
-        kernel_up = nn.Sequential(
-            nn.Conv2d( nc, output_kernel_size, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(output_kernel_size),
-            nn.LeakyReLU(0.2, inplace=True)
+        def discriminator_block(in_filters, out_filters, bn=True):
+            block = [nn.Conv2d(in_filters, out_filters, 3, 2, 1), nn.LeakyReLU(0.2, inplace=True), nn.Dropout2d(0.25)]
+            if bn:
+                block.append(nn.BatchNorm2d(out_filters, 0.8))
+            return block
+
+        self.model = nn.Sequential(
+            *discriminator_block(nc, 16, bn=False),
+            *discriminator_block(16, 32),
+            *discriminator_block(32, 64),
+            *discriminator_block(64, 128),
         )
-        
-        down_size = []
-        cur_size = img_size // 2
-        input_kernel_size = output_kernel_size
-        output_kernel_size = output_kernel_size*2
-        
-        while cur_size > 1 : 
-            cur_size = cur_size // 2
-            if cur_size == 1 : 
-                down_size.append(torch.nn.Conv2d(input_kernel_size, 1, 2, 1, 0))
-                down_size.append(nn.Sigmoid())
-            else : 
-                down_size.append(torch.nn.Conv2d(input_kernel_size, output_kernel_size, 4, 2, 1))
-                down_size.append(nn.BatchNorm2d(output_kernel_size))
-                down_size.append(nn.LeakyReLU(0.2, inplace=True))
-            input_kernel_size = output_kernel_size
-            output_kernel_size = output_kernel_size*2
-            
-        down_size.insert(0, kernel_up)
-            
-        self.main = torch.nn.ModuleList(down_size)
 
-    def forward(self, x):
-        for layer in self.main:
-            x = layer(x)
-        return x.view(-1, 1)
+        # The height and width of downsampled image
+        ds_size = img_size // 2 ** 4
+        self.adv_layer = nn.Sequential(nn.Linear(128 * ds_size ** 2, 1), nn.Sigmoid())
+
+    def forward(self, img):
+        out = self.model(img)
+        out = out.view(out.shape[0], -1)
+        validity = self.adv_layer(out)
+
+        return validity
 
 class Encoder(nn.Module):
     
     def __init__(self, ngpu, nz=100,ndf=64, ngf=64, nc=3, img_size=32):
         super(Encoder, self).__init__()
-        self.ngpu = ngpu
-        
-        output_kernel_size = ndf
-        
-        kernel_up = nn.Sequential(
-            nn.Conv2d( nc, output_kernel_size, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(output_kernel_size),
-            nn.LeakyReLU(0.2, inplace=True)
+        def discriminator_block(in_filters, out_filters, bn=True):
+            block = [nn.Conv2d(in_filters, out_filters, 3, 2, 1), nn.LeakyReLU(0.2, inplace=True), nn.Dropout2d(0.25)]
+            if bn:
+                block.append(nn.BatchNorm2d(out_filters, 0.8))
+            return block
+
+        self.model = nn.Sequential(
+            *discriminator_block(nc, 16, bn=False),
+            *discriminator_block(16, 32),
+            *discriminator_block(32, 64),
+            *discriminator_block(64, 128),
         )
-        
-        down_size = []
-        cur_size = img_size // 2
-        input_kernel_size = output_kernel_size
-        output_kernel_size = output_kernel_size*2
-        
-        while cur_size > 1 : 
-            cur_size = cur_size // 2
-            if cur_size == 1 : 
-                down_size.append(torch.nn.Conv2d(input_kernel_size, nz, 2, 1, 0))
-            else : 
-                down_size.append(torch.nn.Conv2d(input_kernel_size, output_kernel_size, 4, 2, 1))
-                down_size.append(nn.BatchNorm2d(output_kernel_size))
-                down_size.append(nn.LeakyReLU(0.2, inplace=True))
-            input_kernel_size = output_kernel_size
-            output_kernel_size = output_kernel_size*2
-            
-        down_size.insert(0, kernel_up)
-            
-        self.main = torch.nn.ModuleList(down_size)
+
+        # The height and width of downsampled image
+        ds_size = img_size // 2 ** 4
+        self.adv_layer = nn.Sequential(nn.Linear(128 * ds_size ** 2, nz))
         self.nz = nz
 
-    def forward(self, x):
-        for layer in self.main:
-            x = layer(x)
-        return x.view(-1, self.nz, 1,1)
+    def forward(self, img):
+        out = self.model(img)
+        out = out.view(out.shape[0], -1)
+        validity = self.adv_layer(out)
+
+        return validity.view(-1,self.nz,1,1)
 
     
 class LinDis(nn.Module):

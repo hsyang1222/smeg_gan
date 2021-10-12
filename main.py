@@ -210,7 +210,7 @@ def main(args):
     output_gsfake_list = []
     output_real_list = []
     smeg = args.smeg_gan
-    if args.add_alpha <0 :
+    if args.add_alpha <=0 :
         smeg=False
     
     i=1
@@ -251,9 +251,8 @@ def main(args):
             sma = 1
             for image, label in tqdm.tqdm(train_loader, desc='Train[%d/%d]' %(i, epochs)):
                 real_cuda = image.to(device)
+                loss_g = update_generatator(args, netE, netG, netD, optimizerG, real_cuda, sma)
                 loss_d = update_discriminator(args, netE, netG, netD, optimizerD, real_cuda, sma)
-                if i % args.n_critic == 0 : 
-                    loss_g = update_generatator(args, netE, netG, netD, optimizerG, real_cuda, sma)
                 if args.run_test : break
             
         loss_log.update(loss_d)

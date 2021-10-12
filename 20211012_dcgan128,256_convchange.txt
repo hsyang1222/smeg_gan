@@ -1,7 +1,7 @@
-python main.py --basemodel=dcgan --dataset=FFHQ --img_size=128 --device=cuda:0 --epoch=100 --wandb=true --weight_decay=0.001 --project_name=smeg_gan_compare --force_gen_real_info=True --save_image_interval=100 
+python main.py --basemodel=dcgan --dataset=FFHQ --img_size=128 --device=cuda:0 --epoch=100 --wandb=true --weight_decay=0.001 --project_name=smeg_gan_compare  --save_image_interval=100 
 
 
 
-python main.py --basemodel=dcgan --dataset=FFHQ --img_size=256 --device=cuda:0 --epoch=100 --wandb=true --weight_decay=0.001 --project_name=smeg_gan_compare --force_gen_real_info=True --save_image_interval=100 
+python main.py --basemodel=dcgan --dataset=FFHQ --img_size=256 --device=cuda:0 --epoch=100 --wandb=true --weight_decay=0.001 --project_name=smeg_gan_compare  --save_image_interval=100 
 
 

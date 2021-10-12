@@ -1,0 +1,3 @@
+python main.py --basemodel=dcgan --dataset=FFHQ --img_size=128 --device=cuda:0 --epoch=100 --wandb=true --project_name=smeg_gan_compare  --save_image_interval=100
+
+python main.py --basemodel=dcgan --dataset=FFHQ --img_size=128 --device=cuda:0 --epoch=100 --wandb=true --project_name=smeg_gan_compare  --save_image_interval=100
